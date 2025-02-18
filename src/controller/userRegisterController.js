@@ -35,11 +35,11 @@ class UserRegisterController {
           return res.status(418).json({ error: "Email already exists." });
         }
       }
-      const user = await userRegisterService.registerUser(
+      const user = await userRegisterService.registerUser({
         email,
         password,
-        username
-      );
+        username,
+      });
       if (user) {
         return res.status(201).json({
           message: "Registration successful.",

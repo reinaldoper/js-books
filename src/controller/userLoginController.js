@@ -21,7 +21,7 @@ class UserLoginController {
         .json({ error: "Username and password must be strings." });
     }
     try {
-      const user = await loginService.login(username);
+      const user = await loginService.login({ username });
       if (!user) {
         return res.status(401).json({ error: "Invalid credentials." });
       }
