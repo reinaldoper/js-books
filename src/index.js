@@ -7,6 +7,7 @@ import { validateEmail, validateUsername, validatePassword } from './middleware/
 import userLogin from './controller/userLoginController.js';
 import checkBodySize from './middleware/checkBodySize.js';
 import preventSQLInjection from './middleware/preventSQLInjection.js';
+import bookController from './controller/bookController.js';
 
 dotenv.config();
 
@@ -21,7 +22,7 @@ app.use(cookiesParser());
 
 app.use('/user/login', checkBodySize, express.json(), preventSQLInjection, validateUsername, validatePassword, userLogin.login);
 app.use('/user/register', express.json(), validateEmail, validateUsername, validatePassword, userRegisterController.register);
-
+app.use('/books', express.json({ limit: '150mb' }), bookController);
 
 
 app.listen(PORT, () => {
