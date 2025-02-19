@@ -1,6 +1,6 @@
 import express from 'express';
-import prisma from '../prismaClient.js';
 import authenticateUser from '../middleware/authenticateUser.js';
+import borrowedService from '../service/borrowedService.js';
 
 class BorrowedController {
   constructor() {
@@ -23,56 +23,13 @@ class BorrowedController {
     }
 
     try {
-      const book = await prisma.book.findUnique({ where: { isbn } });
-      if (!book) {
-        return res.status(400).json({ error: 'Book not found' });
-      }
-
-      const borrowedBooksCount = await prisma.borrowing.count({
-        where: { userId, returnedAt: null },
-      });
-      if (borrowedBooksCount >= 2) {
-        return res.status(400).json({ error: 'Borrowing limit reached' });
-      }
-
-      if (book.status !== 'available') {
-        return res.status(400).json({ error: 'Book not available for borrowing' });
-      }
-
-      const existingBorrowing = await prisma.borrowing.findFirst({
-        where: {
-          bookId: book.id,
-          returnedAt: null,
-        },
-      });
-
-      if (existingBorrowing) {
-        return res.status(400).json({ error: 'Book already borrowed by another user' });
-      }
-
-      const result = await prisma.$transaction(async (prisma) => {
-        const borrowing = await prisma.borrowing.create({
-          data: {
-            userId,
-            bookId: book.id,
-            borrowedAt: new Date(),
-          },
-        });
-
-        await prisma.book.update({
-          where: { id: book.id },
-          data: { status: 'borrowed' },
-        });
-
-        return borrowing;
-      });
-
+      const result = await borrowedService.borrowBook(isbn, userId);
       return res.status(200).json({ isbn: isbn, borrowed_at: result.borrowedAt });
     } catch (error) {
       console.error('Error borrowing book:', error);
       if (!res.headersSent) {
-        if (error.code === 'P2002') {
-          return res.status(400).json({ error: 'Book already borrowed by user' });
+        if (error.message === 'Book not found' || error.message === 'Borrowing limit reached' || error.message === 'Book not available for borrowing' || error.message === 'Book already borrowed by another user') {
+          return res.status(400).json({ error: error.message });
         }
         return res.status(500).json({ error: 'Internal Server Error' });
       }
@@ -84,36 +41,15 @@ class BorrowedController {
     const userId = Number(req.user?.id);
 
     try {
-      await prisma.$transaction(async (prisma) => {
-        const book = await prisma.book.findUnique({ where: { isbn } });
-        if (!book) {
-          return res.status(400).send();
-        }
-
-        const borrowedBook = await prisma.borrowing.findFirst({
-          where: { userId, bookId: book.id, returnedAt: null },
-        });
-
-        if (!borrowedBook) {
-          return res.status(400).send();
-        }
-
-        await prisma.borrowing.update({
-          where: { id: borrowedBook.id },
-          data: { returnedAt: new Date() },
-        });
-
-        await prisma.book.update({
-          where: { id: book.id },
-          data: { status: 'available' },
-        });
-      });
-
+      await borrowedService.returnBook(isbn, userId);
       return res.status(204).send();
     } catch (error) {
       console.error('Error returning book:', error);
       if (!res.headersSent) {
-        return res.status(400).json({ error: error.message || 'Internal Server Error' });
+        if (error.message === 'Book not found' || error.message === 'Borrowed book not found') {
+          return res.status(400).json({ error: error.message });
+        }
+        return res.status(500).json({ error: 'Internal Server Error' });
       }
     }
   }
@@ -122,23 +58,7 @@ class BorrowedController {
     const userId = req.user?.id ? Number(req.user.id) : null;
 
     try {
-      const borrowedBooks = userId
-        ? await prisma.borrowing.findMany({
-            where: { userId },
-            include: { book: { select: { isbn: true } } },
-            orderBy: { borrowedAt: 'desc' },
-          })
-        : await prisma.borrowing.findMany({
-            include: { book: { select: { isbn: true } } },
-            orderBy: { borrowedAt: 'desc' },
-          });
-
-      const response = borrowedBooks.map((borrowedBook) => ({
-        isbn: borrowedBook.book.isbn,
-        borrowed_at: borrowedBook.borrowedAt,
-        returned_at: borrowedBook.returnedAt,
-      }));
-
+      const response = await borrowedService.getBorrowedBooks(userId);
       return res.status(200).json({ books: response });
     } catch (error) {
       console.error('Error fetching borrowed books:', error);

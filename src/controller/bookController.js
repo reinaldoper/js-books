@@ -1,6 +1,6 @@
 import { Router } from 'express';
-import prisma from '../prismaClient.js';
 import authenticateAdmin from '../middleware/auth.js';
+import bookService from '../service/bookService.js';
 
 class BookController {
   constructor() {
@@ -22,51 +22,12 @@ class BookController {
         return res.status(400).json({ error: 'No books provided' });
       }
 
-      const isbnSet = new Set();
-      for (const book of booksToCreate) {
-        if (isbnSet.has(book.isbn)) {
-          return res.status(400).json({ error: `Duplicate ISBN: ${book.isbn}` });
-        }
-        isbnSet.add(book.isbn);
-      }
-
-      const existingBooks = await prisma.book.findMany({
-        where: {
-          isbn: {
-            in: booksToCreate.map(book => book.isbn),
-          },
-        },
-      });
-
-      if (existingBooks.length > 0) {
-        const existingIsbns = existingBooks.map(book => book.isbn);
-        return res.status(400).json({ error: `Duplicate ISBNs: ${existingIsbns.join(', ')}` });
-      }
-
-      await prisma.book.createMany({
-        data: booksToCreate.map(book => ({
-          title: book.title,
-          author: book.author,
-          edition: book.edition,
-          publisher: book.publisher,
-          isbn: book.isbn,
-          genre: book.genre,
-          page_count: book.page_count,
-          language: book.language,
-          publicationYear: book.publication_year,
-        })),
-        skipDuplicates: true,
-      });
-
-      const response = booksToCreate.map(book => ({
-        isbn: book.isbn,
-        added_at: new Date()
-      }));
+      const response = await bookService.createBooks(booksToCreate);
       return res.status(201).json(response);
     } catch (error) {
       console.error("Error creating books:", error);
-      if (error instanceof Error && error.name === 'PrismaClientKnownRequestError' && error.code === 'P2002') {
-        return res.status(400).json({ error: 'Duplicate ISBN' });
+      if (error.message.startsWith('Duplicate ISBN')) {
+        return res.status(400).json({ error: error.message });
       } else {
         return res.status(500).json({ error: 'Internal Server Error' });
       }
@@ -77,17 +38,8 @@ class BookController {
     try {
       const page = parseInt(req.query.page) || 0;
       const limit = 7;
-      const offset = page * limit;
-      const books = await prisma.book.findMany({
-        skip: offset,
-        take: limit,
-        orderBy: {
-          isbn: 'desc',
-        },
-      });
 
-      const count = await prisma.book.count();
-      const totalPages = Math.ceil(count / limit);
+      const { books, totalPages } = await bookService.getBooks(page, limit);
 
       if (page >= totalPages) {
         return res.status(200).json({ total_pages: totalPages, page: page, books: [] });
@@ -119,21 +71,9 @@ class BookController {
   async updateBook(req, res) {
     try {
       const isbn = req.params.isbn;
-      const { title, author, edition, publisher, genre, page_count, language, publication_year } = req.body;
-      const updatedBook = await prisma.book.update({
-        where: { isbn },
-        data: {
-          title,
-          author,
-          edition,
-          publisher,
-          genre,
-          page_count,
-          language,
-          publicationYear: publication_year,
-          updatedAt: new Date(),
-        },
-      });
+      const bookData = req.body;
+
+      const updatedBook = await bookService.updateBook(isbn, bookData);
 
       if (!updatedBook) {
         return res.status(400).json({ error: 'Book not found' });
@@ -148,9 +88,8 @@ class BookController {
   async deleteBook(req, res) {
     try {
       const isbn = req.params.isbn;
-      const deletedBook = await prisma.book.delete({
-        where: { isbn },
-      });
+
+      const deletedBook = await bookService.deleteBook(isbn);
 
       if (!deletedBook) {
         return res.status(400).json({ error: 'Book not found' });
