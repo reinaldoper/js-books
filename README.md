@@ -143,7 +143,7 @@ Este é um projeto backend desenvolvido em Node.js utilizando Express, Prisma e 
 
 
 ### Tecnologias Utilizadas
-- Node.js
+- Node.js >18
 - Express
 - Prisma
 - MySQL
